@@ -94,30 +94,43 @@ def find_best_partner(player_name, df):
 
 def get_opponent_names(player_name, game_num, df):
     """Get the names of opponents in a specific game"""
+    # Get the player's team for this game
     player_game = df[(df["Spiller"] == player_name) & (df["Kamp Nr"] == game_num)]
     if player_game.empty:
-        return ""
+        return "Unknown"
     
     player_team = player_game.iloc[0]["Hold"]
     opponent_team = "A" if player_team == "B" else "B"
     
+    # Get all opponents in this game
     opponents = df[(df["Kamp Nr"] == game_num) & (df["Hold"] == opponent_team)]["Spiller"].tolist()
+    
+    if not opponents:
+        return "Unknown"
+    
     return " & ".join(opponents)
 
 def get_teammate_name(player_name, game_num, df):
     """Get the name of teammate in a specific game"""
+    # Get the player's team for this game
     player_game = df[(df["Spiller"] == player_name) & (df["Kamp Nr"] == game_num)]
     if player_game.empty:
-        return ""
+        return "Unknown"
     
     player_team = player_game.iloc[0]["Hold"]
     
+    # Get teammate in the same team and game
     teammate = df[(df["Kamp Nr"] == game_num) & 
                   (df["Hold"] == player_team) & 
                   (df["Spiller"] != player_name)]
     
     if teammate.empty:
-        return "Solo"
+        # Check if this is actually a 1v1 game or data issue
+        all_players_in_game = df[df["Kamp Nr"] == game_num]["Spiller"].tolist()
+        if len(all_players_in_game) == 2:
+            return "1v1"
+        return "Unknown"
+    
     return teammate.iloc[0]["Spiller"]
 
 # Load and filter data
@@ -182,29 +195,34 @@ else:
     # Best partner section
     st.subheader("🤝 Partnership Analysis")
     
-    if best_partner:
+    if all_partners:
         col1, col2 = st.columns(2)
         
         with col1:
-            st.info(f"**Best Partner:** {best_partner}")
-            st.write(f"Win Rate: {best_partner_win_rate:.1%} ({best_partner_games} games)")
+            if best_partner:
+                st.info(f"**Best Partner:** {best_partner}")
+                st.write(f"Win Rate: {best_partner_win_rate:.1%} ({best_partner_games} games)")
+            else:
+                # Find partner with most games if no best partner
+                most_games_partner = max(all_partners.items(), key=lambda x: x[1]["games"])
+                st.info(f"**Most Frequent Partner:** {most_games_partner[0]}")
+                st.write(f"Games: {most_games_partner[1]['games']}")
         
         with col2:
             # Show all partnerships
-            if all_partners:
-                st.write("**All Partnerships:**")
-                partnership_df = pd.DataFrame([
-                    {
-                        "Partner": partner,
-                        "Games": stats["games"],
-                        "Wins": stats["wins"],
-                        "Win Rate": f"{stats['wins']/stats['games']:.1%}"
-                    }
-                    for partner, stats in all_partners.items()
-                ]).sort_values("Games", ascending=False)
-                st.dataframe(partnership_df, hide_index=True)
+            st.write("**All Partnerships:**")
+            partnership_df = pd.DataFrame([
+                {
+                    "Partner": partner,
+                    "Games": stats["games"],
+                    "Wins": stats["wins"],
+                    "Win Rate": f"{stats['wins']/stats['games']:.1%}"
+                }
+                for partner, stats in all_partners.items()
+            ]).sort_values("Games", ascending=False)
+            st.dataframe(partnership_df, hide_index=True)
     else:
-        st.info("Not enough partnership data available (need at least 3 games with same partner)")
+        st.info("No partnership data available")
     
     # Enhanced cumulative win plot
     st.subheader("📈 Performance Over Time")
@@ -219,16 +237,36 @@ else:
     ax.plot(player_df_sorted["Kamp Nr"], player_df_sorted["Cumulative Wins"], 
             marker='o', linewidth=2.5, markersize=6, color='#FF6B35')
     
-    # Add score annotations with better positioning
+    # Add score annotations with better positioning to avoid overlap
+    annotations = []
     for i, row in player_df_sorted.iterrows():
         score = f"{int(row['Holdpoint'])}-{int(row['modstanderpoint'])}"
-        # Alternate annotation positions to avoid overlap
-        y_offset = 15 if i % 2 == 0 else -25
-        ax.annotate(score, (row["Kamp Nr"], row["Cumulative Wins"]),
+        annotations.append((row["Kamp Nr"], row["Cumulative Wins"], score))
+    
+    # Sort annotations by x-coordinate to handle overlaps
+    annotations.sort(key=lambda x: x[0])
+    
+    # Apply smart positioning to avoid overlaps
+    for i, (x, y, score) in enumerate(annotations):
+        # Calculate offset based on position and nearby annotations
+        base_offset = 15
+        
+        # Check for nearby annotations and adjust offset
+        offset_multiplier = 1
+        for j, (other_x, other_y, _) in enumerate(annotations):
+            if i != j and abs(x - other_x) <= 2:  # If games are close
+                if abs(y - other_y) <= 2:  # And cumulative wins are close
+                    offset_multiplier = 2 + (i % 3)  # Stagger the offsets
+                    break
+        
+        # Alternate between positive and negative offsets
+        y_offset = base_offset * offset_multiplier if i % 2 == 0 else -base_offset * offset_multiplier
+        
+        ax.annotate(score, (x, y),
                     textcoords="offset points", xytext=(0, y_offset), 
                     ha='center', fontsize=7, 
                     bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
-                    arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
+                    arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0', alpha=0.7))
     
     # Style the plot
     ax.set_xlabel("Game Number", fontsize=12, fontweight='bold')
@@ -307,42 +345,33 @@ else:
 
 # Beer Simulator Section
 st.subheader("🍺 Beer Simulator")
-st.write("Simulate additional beers consumed based on game performance!")
+st.write("Simulate additional beers consumed based on random dice throwing probability!")
 
 col1, col2 = st.columns(2)
 
 with col1:
-    sim_type = st.radio("Choose simulation type:", ["Fixed", "Random"])
-    
-    if sim_type == "Fixed":
-        fixed_beers = st.slider("Beers per game", 0, 10, 2)
-        st.info(f"Will add {fixed_beers} beers for each game played")
-    else:
-        st.info("Random simulation based on dice throwing probability")
-        st.write("*It is assumed that the player throws two times per point in the game. We then simulate the probability of hitting a 5 given these throws.*")
-        st.write("Probability of getting a 5 on a single throw: 1/6")
-        st.write("Probability of getting at least one 5 in two throws: 1-(5/6)²≈0.306")
+    st.info("Random simulation based on dice throwing probability")
+    st.write("*It is assumed that the player throws two times per point in the game. We then simulate the probability of hitting a 5 given these throws.*")
+    st.write("Probability of getting a 5 on a single throw: 1/6")
+    st.write("Probability of getting at least one 5 in two throws: 1-(5/6)²≈0.306")
 
 with col2:
     if st.button("🎲 Run Simulation"):
-        # Calculate simulated beers
+        # Calculate simulated beers using random approach
         simulated_beers = []
         total_simulated = 0
         
         for _, row in player_df_sorted.iterrows():
-            if sim_type == "Fixed":
-                game_beers = fixed_beers
-            else:
-                # Random simulation based on total points in game
-                total_points = int(row['Holdpoint'])
-                game_beers = 0
-                
-                # For each point, simulate two dice throws
-                for point in range(total_points):
-                    # Probability of getting at least one 5 in two throws: 1-(5/6)²
-                    prob_success = 1 - (5/6)**2
-                    if np.random.random() < prob_success:
-                        game_beers += 1
+            # Random simulation based on total points in game
+            total_points = int(row['Holdpoint'])
+            game_beers = 0
+            
+            # For each point, simulate two dice throws
+            for point in range(total_points):
+                # Probability of getting at least one 5 in two throws: 1-(5/6)²
+                prob_success = 1 - (5/6)**2
+                if np.random.random() < prob_success:
+                    game_beers += 1
             
             total_simulated += game_beers
             simulated_beers.append(total_simulated)
@@ -359,7 +388,7 @@ with col2:
         # Plot simulated beers
         ax.plot(player_df_sorted["Kamp Nr"], simulated_beers, 
                 marker='s', linewidth=2.5, markersize=6, color='#004E89', 
-                label=f'Simulated Beers ({sim_type})')
+                label='Simulated Beers (Random)')
         
         # Style the plot
         ax.set_xlabel("Game Number", fontsize=12, fontweight='bold')
@@ -390,6 +419,5 @@ with col2:
             difference = total_simulated - beers
             st.metric("📈 Difference", f"{difference:+.0f}")
         
-        if sim_type == "Random":
-            st.write(f"**Average beers per game (simulated):** {total_simulated/total_games:.1f}")
-            st.write(f"**Average beers per game (actual):** {beers/total_games:.1f}")
+        st.write(f"**Average beers per game (simulated):** {total_simulated/total_games:.1f}")
+        st.write(f"**Average beers per game (actual):** {beers/total_games:.1f}")
