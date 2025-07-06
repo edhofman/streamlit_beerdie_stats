@@ -122,13 +122,17 @@ def get_teammate_name(player_name, game_num, df):
 
 # Load and filter data
 df = load_data()
-df = df[df["Spil"].str.lower() == "beerdie"]
+df = df[df["Spil"].str.lower().str.strip() == "beerdie"]
+
+# Filter for specific players only
+allowed_players = ["Boogie", "Christian", "Emil", "G", "Ibh", "Jakob", "Lutz", "Mads", "Martin", "Nick", "Ruben"]
+df = df[df["Spiller"].isin(allowed_players)]
 
 # Title
 st.markdown('<div class="main-header">🍺 Beerdie Championship Stats</div>', unsafe_allow_html=True)
 
 # Player selection
-players = sorted(df["Spiller"].unique())
+players = sorted([p for p in df["Spiller"].unique() if p in allowed_players])
 player = st.selectbox("🎯 Choose a player", players, index=0)
 
 player_df = df[df["Spiller"] == player]
@@ -300,3 +304,92 @@ else:
             st.metric("🎯 Close Game Win Rate", f"{close_game_wins/close_game_total:.1%}")
         else:
             st.metric("🎯 Close Games (≤3 pts)", 0)
+
+# Beer Simulator Section
+st.subheader("🍺 Beer Simulator")
+st.write("Simulate additional beers consumed based on game performance!")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    sim_type = st.radio("Choose simulation type:", ["Fixed", "Random"])
+    
+    if sim_type == "Fixed":
+        fixed_beers = st.slider("Beers per game", 0, 10, 2)
+        st.info(f"Will add {fixed_beers} beers for each game played")
+    else:
+        st.info("Random simulation based on dice throwing probability")
+        st.write("*It is assumed that the player throws two times per point in the game. We then simulate the probability of hitting a 5 given these throws.*")
+        st.write("Probability of getting a 5 on a single throw: 1/6")
+        st.write("Probability of getting at least one 5 in two throws: 1-(5/6)²≈0.306")
+
+with col2:
+    if st.button("🎲 Run Simulation"):
+        # Calculate simulated beers
+        simulated_beers = []
+        total_simulated = 0
+        
+        for _, row in player_df_sorted.iterrows():
+            if sim_type == "Fixed":
+                game_beers = fixed_beers
+            else:
+                # Random simulation based on total points in game
+                total_points = int(row['Holdpoint'])
+                game_beers = 0
+                
+                # For each point, simulate two dice throws
+                for point in range(total_points):
+                    # Probability of getting at least one 5 in two throws: 1-(5/6)²
+                    prob_success = 1 - (5/6)**2
+                    if np.random.random() < prob_success:
+                        game_beers += 1
+            
+            total_simulated += game_beers
+            simulated_beers.append(total_simulated)
+        
+        # Create comparison plot
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        # Plot actual beers
+        actual_cumulative = player_df_sorted["min_antal_øl"].cumsum()
+        ax.plot(player_df_sorted["Kamp Nr"], actual_cumulative, 
+                marker='o', linewidth=2.5, markersize=6, color='#FF6B35', 
+                label='Actual Beers')
+        
+        # Plot simulated beers
+        ax.plot(player_df_sorted["Kamp Nr"], simulated_beers, 
+                marker='s', linewidth=2.5, markersize=6, color='#004E89', 
+                label=f'Simulated Beers ({sim_type})')
+        
+        # Style the plot
+        ax.set_xlabel("Game Number", fontsize=12, fontweight='bold')
+        ax.set_ylabel("Cumulative Beers", fontsize=12, fontweight='bold')
+        ax.set_title(f"Beer Consumption: Actual vs Simulated - {player}", fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        ax.set_facecolor('#F8F9FA')
+        ax.legend()
+        
+        # Set integer ticks
+        ax.set_xticks(range(int(player_df_sorted["Kamp Nr"].min()), 
+                           int(player_df_sorted["Kamp Nr"].max()) + 1))
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        
+        # Show comparison stats
+        st.subheader("📊 Simulation Results")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("🍺 Actual Total Beers", int(beers))
+        
+        with col2:
+            st.metric("🍺 Simulated Total Beers", int(total_simulated))
+        
+        with col3:
+            difference = total_simulated - beers
+            st.metric("📈 Difference", f"{difference:+.0f}")
+        
+        if sim_type == "Random":
+            st.write(f"**Average beers per game (simulated):** {total_simulated/total_games:.1f}")
+            st.write(f"**Average beers per game (actual):** {beers/total_games:.1f}")
