@@ -368,7 +368,7 @@ with col2:
         for _, row in player_df_sorted.iterrows():
             # Random simulation based on total points in game
             total_points = int(row['Holdpoint']) + int(row['modstanderpoint'])
-            game_beers = 0
+            game_beers = int(row["min_antal_øl"])
             
             # # For each point, simulate two dice throws
             # for point in range(total_points):
