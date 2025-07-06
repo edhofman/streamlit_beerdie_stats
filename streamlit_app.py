@@ -139,7 +139,7 @@ df = df[df["Spil"].str.lower().str.strip() == "beerdie"]
 
 # Filter for specific players only
 allowed_players = ["Boogie", "Christian", "Emil", "G", "Ibh", "Jakob", "Lutz", "Mads", "Martin", "Nick", "Ruben"]
-df = df[df["Spiller"].isin(allowed_players)]
+#df = df[df["Spiller"].isin(allowed_players)]
 
 # Title
 st.markdown('<div class="main-header">🍺 Beerdie Championship Stats</div>', unsafe_allow_html=True)
@@ -351,9 +351,13 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.info("Random simulation based on dice throwing probability")
-    st.write("*It is assumed that the player throws two times per point in the game. We then simulate the probability of hitting a 5 given these throws.*")
+    st.write("*It is assumed that the player throws a dice on the table between 3-6 times pr. game, dependening on the length of the game. We then simulate the probability of hitting a 5 given these throws.*")
+    st.write("Points in game <= 15: The player throws a dice 3 times on the table.")
+    st.write("Points in game <= 20: The player throws a dice 4 times on the table.")
+    st.write("Points in game <= 25: The player throws a dice 5 times on the table.")
+    st.write("Points in game <= 30: The player throws a dice 6 times on the table.")
+    st.write("Points in game >  30: The player throws a dice 7 times on the table.")
     st.write("Probability of getting a 5 on a single throw: 1/6")
-    st.write("Probability of getting at least one 5 in two throws: 1-(5/6)²≈0.306")
 
 with col2:
     if st.button("🎲 Run Simulation"):
@@ -363,13 +367,29 @@ with col2:
         
         for _, row in player_df_sorted.iterrows():
             # Random simulation based on total points in game
-            total_points = int(row['Holdpoint'])
+            total_points = int(row['Holdpoint']) + int(row['modstanderpoint'])
             game_beers = 0
             
-            # For each point, simulate two dice throws
-            for point in range(total_points):
+            # # For each point, simulate two dice throws
+            # for point in range(total_points):
+            #     # Probability of getting at least one 5 in two throws: 1-(5/6)²
+            #     prob_success = 1 - (5/6)**2
+            #     if np.random.random() < prob_success:
+            #         game_beers += 1
+            # For each game simulate amount of dices on board
+            if total_points <= 15:
+                sims = 3
+            elif total_points <=20:
+                sims = 4
+            elif total_points <=25:
+                sims = 5
+            elif total_points <=30:
+                sims = 6
+            elif total_points <=100:
+                sims=7
+            for point in range(sims):
                 # Probability of getting at least one 5 in two throws: 1-(5/6)²
-                prob_success = 1 - (5/6)**2
+                prob_success = 1 - 5/6
                 if np.random.random() < prob_success:
                     game_beers += 1
             
